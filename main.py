@@ -82,14 +82,15 @@ async def report_issue(
     }
 
     # Save into Firestore
-    doc_ref, _ = db.collection("issues").add(issue_data)
+    _, doc_ref = db.collection("issues").add(issue_data)
 
     return {
-        "success": True,
-        "message": "Issue reported successfully",
-        "issue_id": doc_ref.id,
-        "maps_link": f"https://www.google.com/maps?q={latitude},{longitude}"
+    "success": True,
+    "message": "Issue reported successfully",
+    "issue_id": doc_ref.id,
+    "maps_link": f"https://www.google.com/maps?q={latitude},{longitude}"
     }
+
 
 
 
