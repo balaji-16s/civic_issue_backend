@@ -48,42 +48,35 @@ async def report_issue_preflight():
     return {"message": "CORS OK"}
 
 
-# POST — Report Issue
 @app.post("/report-issue")
 async def report_issue(
     description: str = Form(...),
     latitude: float = Form(...),
     longitude: float = Form(...),
-    image: UploadFile = File(...)
+    image: UploadFile = File(None)
 ):
-
-    # Upload image to Cloudinary
-    upload = cloudinary.uploader.upload(image.file)
-    image_url = upload["secure_url"]
-
-    # Run AI Categorization
-    ai_result = analyze_issue(description)
 
     issue = {
         "description": description,
-        "image_url": image_url,
-        "latitude": latitude,
-        "longitude": longitude,
-        "status": "Pending",
-        "department": ai_result.get("department"),
-        "category": ai_result.get("category"),
-        "severity": ai_result.get("severity"),
-        "actions": ai_result.get("actions"),
-        "created_at": firestore.SERVER_TIMESTAMP
+        "location": {"lat": latitude, "lng": longitude},
+        "created_at": datetime.utcnow().isoformat()
     }
 
+    # If image uploaded → upload to Cloudinary
+    if image:
+            result = cloudinary.uploader.upload(image.file)
+            issue["image_url"] = result["secure_url"]
+
+    # Save to Firestore
     doc_ref, _ = db.collection("issues").add(issue)
 
+    # Return only JSON-safe fields
     return {
-    "status": "success",
-    "id": doc_ref.id,
-    "message": "Issue reported successfully"
+        "status": "success",
+        "id": doc_ref.id,
+        "message": "Issue reported successfully"
     }
+
 
 
 
