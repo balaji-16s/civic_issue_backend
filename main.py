@@ -77,13 +77,14 @@ async def report_issue(
         "created_at": firestore.SERVER_TIMESTAMP
     }
 
-    doc_ref = db.collection("issues").add(issue)
+    doc_ref, _ = db.collection("issues").add(issue)
 
     return {
-        "message": "Issue reported successfully",
-        "issue_id": doc_ref[1].id,
-        "data": issue
+    "status": "success",
+    "id": doc_ref.id,
+    "message": "Issue reported successfully"
     }
+
 
 
 # GET — Fetch All Issues
