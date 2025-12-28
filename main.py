@@ -36,6 +36,11 @@ def home():
     return {"status": "Backend running"}
 
 
+@app.options("/report-issue")
+async def report_issue_preflight():
+    return {"message": "CORS OK"}
+
+
 # POST — Report Issue
 @app.post("/report-issue")
 async def report_issue(
