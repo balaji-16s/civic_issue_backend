@@ -58,29 +58,39 @@ async def report_issue(
     image: UploadFile = File(None)
 ):
 
-    issue_data = {
-    "title": issue.title,
-    "description": issue.description,
-    "latitude": issue.latitude,
-    "longitude": issue.longitude,
-    "image_url": image_url,
-    "ai_summary": ai_summary,
-    "created_at": datetime.utcnow().isoformat()
-}
+    image_url = None
 
-
-    # If image uploaded → upload to Cloudinary
+    # Upload image if provided
     if image:
-            result = cloudinary.uploader.upload(image.file)
-            issue["image_url"] = result["secure_url"]
+        upload = cloudinary.uploader.upload(image.file)
+        image_url = upload["secure_url"]
 
+    # Run AI analysis (safe fallback if AI fails)
+    ai_summary = analyze_issue(description)
+    if isinstance(ai_summary, dict) and "error" in ai_summary:
+        ai_summary = None
+
+    issue_data = {
+        "title": "Citizen Issue Report",
+        "description": description,
+        "latitude": latitude,
+        "longitude": longitude,
+        "image_url": image_url,
+        "ai_summary": ai_summary,
+        "status": "Pending",
+        "created_at": datetime.utcnow().isoformat()
+    }
+
+    # Save into Firestore
     doc_ref, _ = db.collection("issues").add(issue_data)
 
     return {
-    "success": True,
-    "message": "Issue reported successfully",
-    "issue_id": doc_ref.id
-}
+        "success": True,
+        "message": "Issue reported successfully",
+        "issue_id": doc_ref.id,
+        "maps_link": f"https://www.google.com/maps?q={latitude},{longitude}"
+    }
+
 
 
 
