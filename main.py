@@ -277,7 +277,7 @@ def get_officer_issues(officer_id: str):
     return issues
 
 
-from fastapi import body
+from fastapi import Body
 #Login
 @app.post("/login")
 async def login(user: dict = Body(...)):
