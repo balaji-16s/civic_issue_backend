@@ -3,11 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from firebase_config import db
 from cloudinary_config import cloudinary
 from ai_service import analyze_issue
-import time
+import json
 from firebase_admin import firestore
 from fastapi.responses import JSONResponse
 from datetime import datetime
-
+from auth_config import verify_user
 
 app = FastAPI(
     title="Civic Issue Reporting API",
@@ -19,25 +19,15 @@ app = FastAPI(
 )
 
 
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://civic-issue-frontend.onrender.com",   # (we will deploy later)
-]
-
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],            # temporarily allow all — safe for testing
+    allow_origins=["*"],
     allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"],
 )
-
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return JSONResponse({"status": "ok"})
 
 
 @app.get("/")
@@ -45,11 +35,20 @@ def home():
     return {"status": "Backend running"}
 
 
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return JSONResponse({"status": "ok"})
+
+
 @app.options("/report-issue")
 async def report_issue_preflight():
     return {"message": "CORS OK"}
 
 
+
+# ============================================================
+# 🚀 Citizen — Report Issue (Gemini Auto-Analysis)
+# ============================================================
 @app.post("/report-issue")
 async def report_issue(
     description: str = Form(...),
@@ -60,48 +59,70 @@ async def report_issue(
 
     image_url = None
 
-    # Upload image if provided
+    # Upload image to Cloudinary
     if image:
         upload = cloudinary.uploader.upload(image.file)
         image_url = upload["secure_url"]
 
-    # Run AI analysis (safe fallback if AI fails)
-    ai_summary = analyze_issue(description)
-    if isinstance(ai_summary, dict) and "error" in ai_summary:
-        ai_summary = None
 
+    # -------------------------------
+    # 🤖 Run Gemini AI (Safe Parse)
+    # -------------------------------
+    try:
+        ai_text = analyze_issue(description)
+        ai_json = json.loads(ai_text)
+    except Exception:
+        ai_json = {
+            "ai_summary": None,
+            "severity": "Pending",
+            "risk_level": None,
+            "priority_score": None,
+            "category": "Other",
+            "department": "Municipality",
+            "suggested_actions": []
+        }
+
+
+    # -------------------------------
+    # 🧾 Save Issue Record
+    # -------------------------------
     issue_data = {
         "title": "Citizen Issue Report",
         "description": description,
         "latitude": latitude,
         "longitude": longitude,
         "image_url": image_url,
-        "ai_summary": ai_summary,
         "status": "Pending",
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
+
+        # AI Fields
+        "ai_summary": ai_json.get("ai_summary"),
+        "severity": ai_json.get("severity"),
+        "risk_level": ai_json.get("risk_level"),
+        "priority_score": ai_json.get("priority_score"),
+        "category": ai_json.get("category"),
+        "department": ai_json.get("department"),
+        "suggested_actions": ai_json.get("suggested_actions"),
     }
 
-    # Save into Firestore
-    _, doc_ref = db.collection("issues").add(issue_data)
+    doc_ref = db.collection("issues").add(issue_data)[1]
 
     return {
-    "success": True,
-    "message": "Issue reported successfully",
-    "issue_id": doc_ref.id,
-    "maps_link": f"https://www.google.com/maps?q={latitude},{longitude}"
+        "success": True,
+        "message": "Issue reported successfully",
+        "issue_id": doc_ref.id,
+        "maps_link": f"https://www.google.com/maps?q={latitude},{longitude}"
     }
 
 
 
-
-
-
-
-
-# GET — Fetch All Issues
+# ============================================================
+# 📌 Fetch All Issues
+# ============================================================
 @app.get("/issues")
 def get_issues():
     issues = []
+
     docs = db.collection("issues").stream()
 
     for doc in docs:
@@ -111,11 +132,10 @@ def get_issues():
         lat = data.get("latitude")
         lon = data.get("longitude")
 
-        # Skip if missing coordinates
-        if lat is None or lon is None:
-            data["maps_link"] = None
-        else:
-            data["maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
+        data["maps_link"] = (
+            f"https://www.google.com/maps?q={lat},{lon}"
+            if lat and lon else None
+        )
 
         issues.append(data)
 
@@ -123,7 +143,9 @@ def get_issues():
 
 
 
-# GET — Navigation Link
+# ============================================================
+# 📍 Google Maps Redirect
+# ============================================================
 @app.get("/navigate/{issue_id}")
 def navigate(issue_id: str):
     doc = db.collection("issues").document(issue_id).get()
@@ -134,35 +156,37 @@ def navigate(issue_id: str):
     }
 
 
-# POST — Resolve with AI
+
+# ============================================================
+# 🤖 Manual AI Analysis Endpoint (Optional)
+# ============================================================
 @app.post("/resolve-with-ai")
 def resolve_with_ai(description: str):
-    ai_result = analyze_issue(description)
+
+    ai_json = json.loads(analyze_issue(description))
 
     doc_ref = db.collection("ai_analysis").add({
         "description": description,
-        "category": ai_result.get("category"),
-        "severity": ai_result.get("severity"),
-        "department": ai_result.get("department"),
-        "actions": ai_result.get("actions"),
-        "status": "Pending",
-        "created_at": firestore.SERVER_TIMESTAMP
+        **ai_json
     })
 
     return {
-        "message": "AI analysis saved successfully",
+        "message": "AI analysis completed",
         "document_id": doc_ref[1].id,
-        "analysis": ai_result
+        "analysis": ai_json
     }
 
 
-# POST — Update Issue Status (Govt Workflow)
+
+# ============================================================
+# 🟡 Government — Update Issue Status
+# ============================================================
 @app.post("/update-status/{issue_id}")
 async def update_status(
     issue_id: str,
-    status: str = Form(...),        # Pending / In-Progress / Resolved
-    notes: str = Form(""),          # Optional
-    proof_image: UploadFile = File(None)  # Optional image
+    status: str = Form(...),
+    notes: str = Form(""),
+    proof_image: UploadFile = File(None)
 ):
 
     issue_ref = db.collection("issues").document(issue_id)
@@ -177,54 +201,31 @@ async def update_status(
         "updated_at": firestore.SERVER_TIMESTAMP
     }
 
-    # Upload proof image if provided
     if proof_image:
         upload = cloudinary.uploader.upload(proof_image.file)
         update_data["resolved_image"] = upload["secure_url"]
 
-    # If resolved → store resolved timestamp
     if status.lower() == "resolved":
-            update_data["resolved_at"] = firestore.SERVER_TIMESTAMP
+        update_data["resolved_at"] = firestore.SERVER_TIMESTAMP
 
-    # Update record in Firestore
     issue_ref.update(update_data)
-
-    # ---- FIX: create JSON-safe copy for API response ----
-    response_data = update_data.copy()
-
-    if "updated_at" in response_data:
-        response_data["updated_at"] = "SERVER_TIMESTAMP"
-
-    if "resolved_at" in response_data:
-        response_data["resolved_at"] = "SERVER_TIMESTAMP"
-
-    # -----------------------------------------------------
 
     return {
         "message": "Issue status updated successfully",
         "issue_id": issue_id,
-        "update": response_data
+        "update": {
+            **update_data,
+            "updated_at": "SERVER_TIMESTAMP",
+            "resolved_at": "SERVER_TIMESTAMP"
+                if "resolved_at" in update_data else None
+        }
     }
 
 
-@app.get("/issues/{status}")
-def get_issues_by_status(status: str):
-    issues = []
-    
-    docs = db.collection("issues")\
-        .where("status", "==", status.capitalize())\
-        .stream()
 
-    for doc in docs:
-        data = doc.to_dict()
-        data["id"] = doc.id
-        data["maps_link"] = f"https://www.google.com/maps?q={data['latitude']},{data['longitude']}"
-        issues.append(data)
-
-    return issues
-
-
-# POST — Assign Issue to Officer
+# ============================================================
+# 🟢 Assign Officer
+# ============================================================
 @app.post("/assign-officer/{issue_id}")
 async def assign_officer(
     issue_id: str,
@@ -238,14 +239,12 @@ async def assign_officer(
     if not issue.exists:
         return {"error": "Issue not found"}
 
-    update_data = {
+    issue_ref.update({
         "assigned_officer_id": officer_id,
         "assigned_officer_name": officer_name,
         "status": "In-Progress",
         "assigned_at": firestore.SERVER_TIMESTAMP
-    }
-
-    issue_ref.update(update_data)
+    })
 
     return {
         "message": "Officer assigned successfully",
@@ -254,20 +253,50 @@ async def assign_officer(
     }
 
 
-# GET — Issues Assigned to a Specific Officer
+
+# ============================================================
+# 👮 Officer — View Assigned Issues
+# ============================================================
 @app.get("/officer/issues/{officer_id}")
 def get_officer_issues(officer_id: str):
+
     issues = []
 
-    docs = db.collection("issues")\
-        .where("assigned_officer_id", "==", officer_id)\
+    docs = db.collection("issues") \
+        .where("assigned_officer_id", "==", officer_id) \
         .stream()
 
     for doc in docs:
         data = doc.to_dict()
         data["id"] = doc.id
-        data["maps_link"] = f"https://www.google.com/maps?q={data['latitude']},{data['longitude']}"
+        data["maps_link"] = (
+            f"https://www.google.com/maps?q={data['latitude']},{data['longitude']}"
+        )
         issues.append(data)
 
     return issues
 
+
+from fastapi import body
+#Login
+@app.post("/login")
+async def login(user: dict = Body(...)):
+
+    role = user.get("role")
+    username = user.get("username")
+    password = user.get("password")
+
+    found_user = verify_user(role, username, password)
+
+    if not found_user:
+        return {"success": False, "message": "Invalid credentials"}
+
+    return {
+        "success": True,
+        "message": "Login successful",
+        "user": {
+            "id": found_user["id"],
+            "name": found_user.get("name"),
+            "role": found_user.get("role"),
+        }
+    }
