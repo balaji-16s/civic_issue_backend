@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Venv
+.venv/
+venv/
+
+# Firebase Key (DO NOT UPLOAD)
+firebase-key.json
