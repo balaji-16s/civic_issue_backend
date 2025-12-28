@@ -24,9 +24,19 @@ def analyze_issue(description: str):
     Low, Medium, High, Critical
     """
 
-    response = model.generate_content(prompt)
+    try:
+        response = model.generate_content(prompt)
+        text = response.text.strip()
+    except Exception as e:
+    # Fallback if Gemini fails
+      return {
+        "category": "Uncategorized",
+        "severity": "Low",
+        "department": "General",
+        "actions": ["Manual review required"],
+        "error": str(e)
+      }
 
-    text = response.text.strip()
 
     # Extract JSON from response safely
     json_match = re.search(r"\{.*\}", text, re.DOTALL)
