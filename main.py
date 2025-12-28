@@ -58,23 +58,30 @@ async def report_issue(
     image: UploadFile = File(None)
 ):
 
-    issue = {
-        "description": description,
-        "location": {"lat": latitude, "lng": longitude},
-        "created_at": datetime.utcnow().isoformat()
-    }
+    issue_data = {
+    "title": issue.title,
+    "description": issue.description,
+    "latitude": issue.latitude,
+    "longitude": issue.longitude,
+    "image_url": image_url,
+    "ai_summary": ai_summary,
+    "created_at": datetime.utcnow().isoformat()
+}
+
 
     # If image uploaded → upload to Cloudinary
     if image:
             result = cloudinary.uploader.upload(image.file)
             issue["image_url"] = result["secure_url"]
 
-    doc_ref, write_time = db.collection("issues").add(issue)
+    doc_ref, _ = db.collection("issues").add(issue_data)
 
     return {
-    "id": doc_ref.id,
-    "ai": analysis
-    }
+    "success": True,
+    "message": "Issue reported successfully",
+    "issue_id": doc_ref.id
+}
+
 
 
 
