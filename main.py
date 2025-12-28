@@ -107,10 +107,20 @@ def get_issues():
     for doc in docs:
         data = doc.to_dict()
         data["id"] = doc.id
-        data["maps_link"] = f"https://www.google.com/maps?q={data['latitude']},{data['longitude']}"
+
+        lat = data.get("latitude")
+        lon = data.get("longitude")
+
+        # Skip if missing coordinates
+        if lat is None or lon is None:
+            data["maps_link"] = None
+        else:
+            data["maps_link"] = f"https://www.google.com/maps?q={lat},{lon}"
+
         issues.append(data)
 
     return issues
+
 
 
 # GET — Navigation Link
