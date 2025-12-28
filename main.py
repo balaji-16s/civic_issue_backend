@@ -69,15 +69,13 @@ async def report_issue(
             result = cloudinary.uploader.upload(image.file)
             issue["image_url"] = result["secure_url"]
 
-    # Save to Firestore
-    doc_ref, _ = db.collection("issues").add(issue)
+    doc_ref, write_time = db.collection("issues").add(issue)
 
-    # Return only JSON-safe fields
     return {
-        "status": "success",
-        "id": doc_ref.id,
-        "message": "Issue reported successfully"
+    "id": doc_ref.id,
+    "ai": analysis
     }
+
 
 
 
