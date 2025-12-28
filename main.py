@@ -5,6 +5,7 @@ from cloudinary_config import cloudinary
 from ai_service import analyze_issue
 import time
 from firebase_admin import firestore
+from fastapi.responses import JSONResponse
 
 app = FastAPI(
     title="Civic Issue Reporting API",
@@ -24,11 +25,17 @@ ALLOWED_ORIGINS = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],            # temporarily allow all — safe for testing
+    allow_origin_regex=".*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
+
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return JSONResponse({"status": "ok"})
 
 
 @app.get("/")
