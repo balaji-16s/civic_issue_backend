@@ -6,7 +6,15 @@ from ai_service import analyze_issue
 import time
 from firebase_admin import firestore
 
-app = FastAPI()
+app = FastAPI(
+    title="Civic Issue Reporting API",
+    description="Backend for Civic Issue Reporting & Govt Workflow",
+    version="1.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
+)
+
 
 app.add_middleware(
     CORSMiddleware,
