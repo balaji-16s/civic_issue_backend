@@ -6,6 +6,8 @@ from ai_service import analyze_issue
 import time
 from firebase_admin import firestore
 from fastapi.responses import JSONResponse
+from datetime import datetime
+
 
 app = FastAPI(
     title="Civic Issue Reporting API",
